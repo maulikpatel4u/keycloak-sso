@@ -4,10 +4,10 @@
 ### **Workflow**
 
 **1. Frontend Initiates Login**
-- The frontend sends a request to the backend's `/auth/callback/` endpoint to initiate the login process.
+- The frontend sends a request to the backend's `/login/` endpoint to initiate the login process.
 
 **2. Backend Redirects to Keycloak**
-- The backend constructs a Keycloak login URL with necessary parameters (e.g., client ID, redirect URI) and redirects the user to Keycloak's login page.
+- The backend constructs a Keycloak login URL with necessary parameters (e.g., `client ID`, `redirect URI`) and redirects the user to Keycloak's login page.
 
 **3. Keycloak Authenticates User**
 - The user logs in on Keycloak's login page.
