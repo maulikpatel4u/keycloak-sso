@@ -27,7 +27,7 @@
 
 **6. Tokens Sent to Frontend**
 - The backend returns the access and refresh tokens to the frontend.
-- The frontend securely stores these tokens (e.g., in HttpOnly cookies or local storage)
+- The frontend securely stores these tokens (e.g., in `HttpOnly cookies` or `local storage`)
 
 ### **Backend Setup**
 
@@ -39,7 +39,6 @@ The Django backend will redirect the user to Keycloak for authentication. After 
   ```python
   pip install django-keycloak requests
   ```
-
 
 **2. Configure Django Settings**
 - Update your `settings.py` file to include the necessary Keycloak configurations.
@@ -58,7 +57,6 @@ The Django backend will redirect the user to Keycloak for authentication. After 
   FRONTEND_REDIRECT_URI = "http://localhost:3000/callback/"  # Frontend URL for Keycloak redirect
   BACKEND_CALLBACK_URL = "http://localhost:8000/auth/callback/"  # Backend URL for exchanging the code
   ```
-
 
 **3. Create the Backend Views**
 - Define two views in your `views.py` file:
@@ -81,7 +79,6 @@ The Django backend will redirect the user to Keycloak for authentication. After 
   ]
   ```
 
-
 ### **Frontend Setup**
 
 **1. Trigger Login**
@@ -103,4 +100,12 @@ The Django backend will redirect the user to Keycloak for authentication. After 
   ```
 
 **4. Store the Token in Frontend**
-- Once the frontend receives the token from the backend (in the `/auth/callback/` response), it can store the JWT in `HttpOnly` cookies or `local storage` and send it in the Authorization header for subsequent API calls.
+- Once the frontend receives the token from the backend (in the `/auth/callback/` response), it can store the JWT in `` cookies` or `local storage` and send it in the Authorization header for subsequent API calls.
+
+
+### **Security Considerations**
+
+- Never expose sensitive details like the `client_secret` to the frontend.
+- Use HTTPS for all communications between frontend, backend, and Keycloak.
+- Ensure proper token storage in the frontend (e.g., using `HttpOnly cookies`).
+- Consider token expiration and implement token refresh functionality in your backend if needed.
