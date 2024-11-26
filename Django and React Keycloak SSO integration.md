@@ -103,7 +103,7 @@ The Django backend will redirect the user to Keycloak for authentication. After 
 - Once the frontend receives the token from the backend (in the `/auth/callback/` response), it can store the JWT in `HttpOnly cookies` or `local storage` and send it in the Authorization header for subsequent API calls.
 
 > [!IMPORTANT]
-> ### **Security Considerations**
+> **Security Considerations**
 > - Never expose sensitive details like the `client_secret` to the frontend.
 > - Use HTTPS for all communications between frontend, backend, and Keycloak.
 > - Ensure proper token storage in the frontend (e.g., using `HttpOnly cookies`).
