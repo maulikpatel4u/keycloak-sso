@@ -51,7 +51,7 @@ The Django backend will redirect the user to Keycloak for authentication. After 
   ]
 
   # Keycloak Configuration
-  KEYCLOAK_SERVER_URL = "http://localhost:8080/auth/"  # Your Keycloak server URL
+  KEYCLOAK_SERVER_URL = "http://localhost:8080"  # Your Keycloak server URL
   KEYCLOAK_REALM = "MyRealm"  # Your Keycloak realm
   KEYCLOAK_CLIENT_ID = "APP1"  # Client ID for your app
   KEYCLOAK_CLIENT_SECRET = "your-client-secret"  # Client secret generated in Keycloak
