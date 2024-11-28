@@ -54,8 +54,7 @@ The Django backend will redirect the user to Keycloak for authentication. After 
   KEYCLOAK_REALM = "MyRealm"  # Your Keycloak realm
   KEYCLOAK_CLIENT_ID = "APP1"  # Client ID for your app
   KEYCLOAK_CLIENT_SECRET = "your-client-secret"  # Client secret generated in Keycloak
-  FRONTEND_REDIRECT_URI = "http://localhost:3000/callback/"  # Frontend URL for Keycloak redirect
-  BACKEND_CALLBACK_URL = "http://localhost:8000/auth/callback/"  # Backend URL for exchanging the code
+  KEYCLOAK_CALLBACK_URL = "http://localhost:8000/sso/auth/callback/"  # Callback URL for exchanging the code
   ```
 
 **3. Create the Backend Views**
@@ -64,18 +63,111 @@ The Django backend will redirect the user to Keycloak for authentication. After 
     - Redirects the user to Keycloak for authentication.
   - Callback View:
     - Expects a `code` from the frontend.
-    - Exchanges the authorization code for access and refresh tokens.
+    - Exchange authorization code for tokens, sync user data, and return tokens to the frontend.
+
+```python
+import requests
+from django.shortcuts import redirect
+from urllib.parse import urlencode
+from rest_framework.response import Response
+from rest_framework.views import APIView
+from accounts.models.users import ModelAccountUser
+from demo_site.settings.settings import KEYCLOAK_SERVER_URL, KEYCLOAK_REALM, KEYCLOAK_CLIENT_ID, \
+		KEYCLOAK_CALLBACK_URL, KEYCLOAK_CLIENT_SECRET
+
+class SSOLoginApiView(APIView):
+    """
+    Redirect the user to Keycloak's login page.
+    """
+
+    def get(self, request):        
+        keycloak_url = f"{KEYCLOAK_SERVER_URL}/realms/{KEYCLOAK_REALM}/protocol/openid-connect/auth"
+        params = {
+            'client_id': KEYCLOAK_CLIENT_ID,
+            'redirect_uri': KEYCLOAK_CALLBACK_URL,
+            'response_type': 'code',
+            'scope': 'openid email profile',
+        }
+        return redirect(f"{keycloak_url}?{urlencode(params)}")
+
+class AuthCallbackApiView(APIView):
+    """
+    Exchange authorization code for tokens, sync user data, and return tokens to the frontend.
+    """
+
+    def get(self, request):        
+        code = request.GET.get('code')
+        if not code:
+            response = ApiResponse.error(message='Authorization code not found.')
+            return Response(response, status=HTTP_400_BAD_REQUEST)
+
+        # Exchange authorization code for tokens
+        token_url = f"{KEYCLOAK_SERVER_URL}/realms/{KEYCLOAK_REALM}/protocol/openid-connect/token"
+        data = {
+            'grant_type': 'authorization_code',
+            'code': code,
+            'redirect_uri': KEYCLOAK_CALLBACK_URL,
+            'client_id': KEYCLOAK_CLIENT_ID,
+            'client_secret': KEYCLOAK_CLIENT_SECRET,
+        }
+        headers = {'Content-Type': 'application/x-www-form-urlencoded'}
+
+        try:
+            token_response = requests.post(token_url, data=data, headers=headers)
+            if token_response.status_code == 200:
+                tokens = token_response.json()
+                access_token = tokens.get('access_token')
+
+                # Fetch user info from Keycloak using the access token
+                userinfo_url = f"{KEYCLOAK_SERVER_URL}/realms/{KEYCLOAK_REALM}/protocol/openid-connect/userinfo"
+                userinfo_response = requests.get(userinfo_url, headers={'Authorization': f'Bearer {access_token}'})
+
+                if userinfo_response.status_code == 200:
+                    userinfo = userinfo_response.json()
+                
+                # Sync user data in the database
+                user, _ = ModelAccountUser.objects.get_or_create(
+                    email=userinfo.get('email', ''),
+                    defaults={
+                        'first_name': userinfo.get('given_name', ''),
+                        'last_name': userinfo.get('family_name', ''),
+                    },
+                )
+                
+                # Respond with tokens and user data
+                response_data = {
+                    "auth": tokens,
+                    "user": {
+                        "id": user.id,
+                        "email": user.email,
+                        "first_name": user.first_name,
+                        "last_name": user.last_name,
+                        "full_name": f"{user.first_name} {user.last_name}"
+                    },
+                }
+                response = ApiResponse.success(message="The user has been logged in successfully.", data=response_data)
+                return Response(data=response, status=HTTP_200_OK)
+            else:
+                response = ApiResponse.error(
+                    message='Failed to exchange the authorization code for tokens.',
+                    data=token_response.json()
+                )
+                return Response(response, status=HTTP_400_BAD_REQUEST)
+        except requests.exceptions.RequestException as e:
+            response = ApiResponse.error(message='Error communicating with Keycloak.', data={"error": str(e)})
+            return Response(response, status=HTTP_400_BAD_REQUEST)
+```
 
 **4. Define URLs**
 - Update `urls.py` to include the routes for the login and callback views.
 
-  ```python
+	```python
   from django.urls import path
-  from .views import login, callback
+  from .views import SSOLoginApiView, AuthCallbackApiView
   
   urlpatterns = [
-      path('login/', login, name='login'),
-      path('auth/callback/', callback, name='callback'),
+      path('sso/login/', SSOLoginApiView, name='sso-login'),
+      path('sso/auth/callback/', AuthCallbackApiView, name='sso-auth-callback'),
   ]
   ```
 
@@ -92,7 +184,7 @@ The Django backend will redirect the user to Keycloak for authentication. After 
   
   ```python
 	const exchangeCodeForToken = async (authCode) => {
-	    const response = await fetch(`<Backend-URL>/auth/callback/?code=${authCode}`);
+	    const response = await fetch(`<Backend-URL>/api/sso/auth/callback/?code=${authCode}`);
 	    const tokens = await response.json();
 	    console.log(tokens);
 	    // Store tokens securely, e.g., HttpOnly cookies, localStorage, etc.
