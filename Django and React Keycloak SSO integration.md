@@ -60,117 +60,362 @@ The Django backend will redirect the user to Keycloak for authentication. After 
   }
   ```
 
-**3. Create the Backend Views**
-- Define two views in your `views.py` file:
+**3. Create the custom keycloak authentication class**
+- Create the custom Keycloak authentication class for DRF auth.
+
+  `app/authentication.py`
+  ```python
+  import logging
+  from app_name.models.users import User
+  from rest_framework.status import HTTP_401_UNAUTHORIZED
+  from rest_framework.authentication import BaseAuthentication
+  from rest_framework.exceptions import AuthenticationFailed
+  from app_name.keycloak import KeycloakService
+
+  logger = logging.getLogger('main')
+
+  UNAUTHORIZED_MSG = "Unauthorized. Invalid authentication token."
+
+
+  class KeycloakAuthentication(BaseAuthentication):
+      """
+      Custom authentication class to validate Keycloak tokens using DRF's BaseAuthentication.
+      """
+      def authenticate(self, request):
+          """
+          Authenticate the incoming request using a Keycloak token.
+  
+          Args:
+              request (HttpRequest): The incoming HTTP request.
+
+          Returns:
+              tuple: (user, None) if authentication is successful.
+              None: If no authentication is provided or invalid token.
+        
+          Raises:
+              AuthenticationFailed: If the token is invalid or user cannot be authenticated.
+          """
+          try:
+              # Extract the Authorization header
+              auth_header = request.headers.get("Authorization")
+              if not auth_header or not auth_header.startswith("Bearer "):
+                  return None  # No token provided, let DRF handle unauthenticated requests
+            
+              # Extract the token from the Authorization header
+              token = auth_header.split("Bearer ")[1]
+
+              # Verify the token using Keycloak
+              is_success, token_data = KeycloakService().verify_token(token)
+
+              if not is_success:
+                  raise AuthenticationFailed(UNAUTHORIZED_MSG, code=HTTP_401_UNAUTHORIZED)
+            
+              # Extract user email from the token payload
+              email = token_data.get("email")
+            
+              # Retrieve the user from the database
+              try:
+                  user = User.objects.get(email=email, is_active=True)
+              except ModelAccountUser.DoesNotExist:
+                  logger.error(f"KeycloakAuthentication | No active user found for email: {email}")
+                  raise AuthenticationFailed(UNAUTHORIZED_MSG, code=HTTP_401_UNAUTHORIZED)
+            
+              return user, None  # Return the authenticated user and None for the token
+          except Exception as e:
+              logger.error(f"KeycloakAuthentication | Error: {str(e)}")
+              raise AuthenticationFailed(UNAUTHORIZED_MSG, code=HTTP_401_UNAUTHORIZED)
+  ```
+
+**4. Create the Backend Views**
+- Create a `KeycloakService` that manages interactions with the Keycloak server, including generating authorization URLs, handling tokens, and retrieving user information.
+- Define views in your `views.py` file:
   - Login View:
     - Redirects the user to Keycloak for authentication.
   - Callback View:
     - Expects a `code` from the frontend.
     - Exchange authorization code for tokens, sync user data, and return tokens to the frontend.
+  - Refresh Token View:
+    - Refresh an expired access token using the refresh token.
+  - Logout View:
+    -  Logs the user out by revoking the Keycloak session.
 
+`app/keycloak.py`
 ```python
-import requests
+from keycloak import KeycloakOpenID
+from app.settings import KEYCLOAK_CONFIG
+
+import logging
+
+logger = logging.getLogger("main")
+
+
+class KeycloakService:
+    """
+    KeycloakService handles interactions with the Keycloak server, 
+    including generating authorization URLs, managing tokens, and retrieving user information.
+    """
+
+    def __init__(self):
+        """
+        Initializes the Keycloak client using the configuration settings.
+        """
+        self.keycloak_openid = KeycloakOpenID(
+            server_url=KEYCLOAK_CONFIG['SERVER_URL'],
+            client_id=KEYCLOAK_CONFIG['CLIENT_ID'],
+            realm_name=KEYCLOAK_CONFIG['REALM_NAME'],
+            client_secret_key=KEYCLOAK_CONFIG['CLIENT_SECRET']
+        )
+
+    def get_auth_url(self, scope="openid email profile"):
+        """
+        Generates the Keycloak authorization URL.
+
+        Args:
+            scope (str): Space-separated scopes for authorization. Defaults to "openid email profile".
+
+        Returns:
+            tuple: (bool, str) where the first value indicates success and 
+            the second is the auth URL or error message.
+        """
+        try:
+            auth_url = self.keycloak_openid.auth_url(
+                redirect_uri=KEYCLOAK_CONFIG['REDIRECT_URI'],
+                scope=scope
+            )
+            return True, auth_url
+        except Exception as e:
+            logger.error(f"KeycloakService | get_auth_url - Error while generating auth URL: {str(e)}")
+            return False, 'An error occurred. Please try again later.'
+    
+    def refresh_token(self, refresh_token):
+        """
+        Refreshes an expired access token using a refresh token.
+
+        Args:
+            refresh_token (str): The refresh token provided by Keycloak.
+
+        Returns:
+            tuple: (bool, dict or str) where the first value indicates success and 
+            the second is the token data or error message.
+        """
+        try:
+            if not refresh_token:
+                return False, 'Refresh token not found.'
+            
+            token = self.keycloak_openid.refresh_token(refresh_token)
+            return True, {
+                "access_token": token.get('access_token'),
+                "refresh_token": token.get('refresh_token'),
+                "access_expires_in": token.get('expires_in'), # Time in seconds
+                "refresh_expires_in": token.get('refresh_expires_in') # Time in seconds
+            }
+        except Exception as e:
+            logger.error(f"KeycloakService | refresh_token - Error while refreshing token: {str(e)}")
+            return False, 'Authentication failed: Invalid or expired refresh token.'
+    
+    def get_user_token(self, auth_code):
+        """
+        Exchanges an authorization code for tokens.
+
+        Args:
+            auth_code (str): The authorization code received from Keycloak.
+
+        Returns:
+            tuple: (bool, dict or str) where the first value indicates success and 
+            the second is the token data or error message.
+        """
+        try:
+            if not auth_code:
+                return False, 'Authorization code not found.'
+        
+            # Exchange authorization code for tokens
+            token = self.keycloak_openid.token(
+                grant_type='authorization_code',
+                code=auth_code,
+                redirect_uri=KEYCLOAK_CONFIG['REDIRECT_URI']
+            )
+
+            return True, {
+                "access_token": token.get('access_token'),
+                "refresh_token": token.get('refresh_token'),
+                "access_expires_in": token.get('expires_in'), # Time in seconds
+                "refresh_expires_in": token.get('refresh_expires_in') # Time in seconds
+            }
+        except Exception as e:
+            logger.error(f"KeycloakService | get_user_token - Error while getting user token data: {str(e)}")
+            return False, 'Failed to exchange the authorization code for tokens. Please ensure the authorization code is valid and has not expired.'
+    
+    def get_user_info(self, access_token):
+        """
+        Retrieves user information using the access token.
+
+        Args:
+            access_token (str): The access token issued by Keycloak.
+
+        Returns:
+            tuple: (bool, dict or str) where the first value indicates success and 
+            the second is user info or error message.
+        """
+        try:
+            if not access_token:
+                return False, 'Access token not found.'
+
+            # Fetch user details using the access token
+            user_info = self.keycloak_openid.userinfo(access_token)
+
+            if not user_info:
+                return False, 'Unable to retrieve user information.'
+            
+            return True, user_info
+        except Exception as e:
+            logger.error(f"KeycloakService | get_user_token - Error while getting user info: {str(e)}")
+            return False, 'Something went wrong. Unable to retrieve user information.'
+    
+    def verify_token(self, token):
+        """
+        Verifies the authenticity of a token.
+
+        Args:
+            token (str): The token to be verified.
+
+        Returns:
+            tuple: (bool, dict or str) where the first value indicates success and 
+            the second is token payload or error message.
+        """
+        try:
+            token_data = self.keycloak_openid.decode_token(token)
+            return True, token_data
+        except Exception as e:
+            logger.error(f"KeycloakService | verify_token - Error while verifying token: {str(e)}")
+            return False, "Unauthorized. Invalid authentication token."
+    
+    def logout(self, refresh_token):
+        """
+        Logs the user out by revoking the Keycloak session.
+
+        Args:
+            refresh_token (str): The refresh token provided by Keycloak.
+
+        Returns:
+            tuple: (bool, str) where the first value indicates success and 
+            the second is the success or error message.
+        """
+        try:
+            if not refresh_token:
+                return False, "Refresh token not found."
+            
+            self.keycloak_openid.logout(refresh_token)
+            return True, "Successfully logged out."
+        except Exception as e:
+            logger.error(f"KeycloakService | verify_token - Error while verifying token: {str(e)}")
+            return False, "Unauthorized. Invalid or expired refresh token."
+```
+
+`app/views.py`
+```python
 from django.shortcuts import redirect
-from urllib.parse import urlencode
+from rest_framework.status import HTTP_200_OK, HTTP_400_BAD_REQUEST, HTTP_401_UNAUTHORIZED
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from accounts.models.users import ModelAccountUser
-from demo_site.settings.settings import KEYCLOAK_SERVER_URL, KEYCLOAK_REALM, KEYCLOAK_CLIENT_ID, \
-		KEYCLOAK_CALLBACK_URL, KEYCLOAK_CLIENT_SECRET
+from app_name.models.users import User
+
 
 class SSOLoginApiView(APIView):
     """
     Redirect the user to Keycloak's login page.
     """
+    def get(self, request):
+        is_success, auth_url = KeycloakService().get_auth_url()
 
-    def get(self, request):        
-        keycloak_url = f"{KEYCLOAK_SERVER_URL}/realms/{KEYCLOAK_REALM}/protocol/openid-connect/auth"
-        params = {
-            'client_id': KEYCLOAK_CLIENT_ID,
-            'redirect_uri': KEYCLOAK_CALLBACK_URL,
-            'response_type': 'code',
-            'scope': 'openid email profile',
-        }
-        return redirect(f"{keycloak_url}?{urlencode(params)}")
+        if not is_success:
+            response = ApiResponse.error(message=auth_url)
+            return Response(response, status=HTTP_400_BAD_REQUEST)
+        
+        return redirect(auth_url)
+
 
 class AuthCallbackApiView(APIView):
     """
     Exchange authorization code for tokens, sync user data, and return tokens to the frontend.
     """
-
-    def get(self, request):        
-        code = request.GET.get('code')
-        if not code:
-            response = ApiResponse.error(message='Authorization code not found.')
-            return Response(response, status=HTTP_400_BAD_REQUEST)
-
-        # Exchange authorization code for tokens
-        token_url = f"{KEYCLOAK_SERVER_URL}/realms/{KEYCLOAK_REALM}/protocol/openid-connect/token"
-        data = {
-            'grant_type': 'authorization_code',
-            'code': code,
-            'redirect_uri': KEYCLOAK_CALLBACK_URL,
-            'client_id': KEYCLOAK_CLIENT_ID,
-            'client_secret': KEYCLOAK_CLIENT_SECRET,
-        }
-        headers = {'Content-Type': 'application/x-www-form-urlencoded'}
-
+    def get(self, request):
         try:
-            token_response = requests.post(token_url, data=data, headers=headers)
-            if token_response.status_code == 200:
-                tokens = token_response.json()
-                access_token = tokens.get('access_token')
-
-                # Fetch user info from Keycloak using the access token
-                userinfo_url = f"{KEYCLOAK_SERVER_URL}/realms/{KEYCLOAK_REALM}/protocol/openid-connect/userinfo"
-                userinfo_response = requests.get(userinfo_url, headers={'Authorization': f'Bearer {access_token}'})
-
-                if userinfo_response.status_code == 200:
-                    userinfo = userinfo_response.json()
-                
-                # Sync user data in the database
-                user, _ = ModelAccountUser.objects.get_or_create(
-                    email=userinfo.get('email', ''),
-                    defaults={
-                        'first_name': userinfo.get('given_name', ''),
-                        'last_name': userinfo.get('family_name', ''),
-                    },
-                )
-                
-                # Respond with tokens and user data
-                response_data = {
-                    "auth": tokens,
-                    "user": {
-                        "id": user.id,
-                        "email": user.email,
-                        "first_name": user.first_name,
-                        "last_name": user.last_name,
-                        "full_name": f"{user.first_name} {user.last_name}"
-                    },
-                }
-                response = ApiResponse.success(message="The user has been logged in successfully.", data=response_data)
-                return Response(data=response, status=HTTP_200_OK)
-            else:
-                response = ApiResponse.error(
-                    message='Failed to exchange the authorization code for tokens.',
-                    data=token_response.json()
-                )
+            keycloak_manager = KeycloakService()
+            
+            is_success, token_data = keycloak_manager.get_user_token(request.query_params.get('code'))
+            if not is_success:
+                response = ApiResponse.error(message=token_data)
                 return Response(response, status=HTTP_400_BAD_REQUEST)
-        except requests.exceptions.RequestException as e:
-            response = ApiResponse.error(message='Error communicating with Keycloak.', data={"error": str(e)})
+            
+            is_success, user_info = keycloak_manager.get_user_info(token_data.get('access_token'))
+            if not is_success:
+                response = ApiResponse.error(message=user_info)
+                return Response(response, status=HTTP_400_BAD_REQUEST)
+            
+            try:
+                # Sync user data in the database
+                user, _ = User.objects.get_or_create(
+                    email=user_info.get('email'),
+                    defaults={
+                        'first_name': user_info.get('given_name'),
+                        'last_name': user_info.get('family_name'),
+                    },
+                )
+            except Exception as e:
+                logger.error(f"Error in get_or_create user: {str(e)}")
+                response = ApiResponse.error(message='An error occurred. Please try again later.')
+                return Response(response, status=HTTP_400_BAD_REQUEST)
+            
+            response = ApiResponse.success(message="The user has been logged in successfully.", data=token_data)
+            return Response(data=response, status=HTTP_200_OK)
+        except Exception as e:
+            logger.error(f"AuthCallbackApiView | GET Method - Error: {str(e)}")
+            response = ApiResponse.error(message='Error while communicating with Keycloak.', data={"error": str(e)})
             return Response(response, status=HTTP_400_BAD_REQUEST)
+
+
+class SSORefreshTokenView(APIView):
+    """
+    Refresh an expired access token using the refresh token.
+    """
+    def post(self, request):
+        is_success, token = KeycloakService().refresh_token(request.data.get('refresh_token'))
+
+        if not is_success:
+            response = ApiResponse.error(message=token)
+            return Response(response, status=HTTP_401_UNAUTHORIZED)
+        
+        response = ApiResponse.success(message="Your session has been updated successfully.", data=token)
+        return Response(response, status=HTTP_200_OK)
+
+
+class SSOLogoutApiView(APIView):
+    """
+    Logs the user out by revoking the Keycloak session.
+    """
+    def post(self, request):
+        is_success, message = KeycloakService().logout(request.data.get('refresh_token'))
+        
+        if not is_success:
+            response = ApiResponse.error(message=message)
+            return Response(response, status=HTTP_401_UNAUTHORIZED)
+        
+        response = ApiResponse.success(message=message)
+        return Response(response, status=HTTP_200_OK)
 ```
 
-**4. Define URLs**
+**5. Define URLs**
 - Update `urls.py` to include the routes for the login and callback views.
 
 	```python
   from django.urls import path
-  from .views import SSOLoginApiView, AuthCallbackApiView
+  from .views import SSOLoginApiView, AuthCallbackApiView, SSORefreshTokenView, SSOLogoutApiView
   
   urlpatterns = [
       path('sso/login/', SSOLoginApiView, name='sso-login'),
       path('sso/auth/callback/', AuthCallbackApiView, name='sso-auth-callback'),
+      path("sso/token/refresh/", SSORefreshTokenView.as_view(), name="token-refresh"),
+      path("sso/logout/", SSOLogoutApiView.as_view(), name="sso-logout"),
   ]
   ```
 
