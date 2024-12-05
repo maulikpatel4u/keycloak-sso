@@ -34,27 +34,30 @@
 The Django backend will redirect the user to Keycloak for authentication. After successful login, Keycloak redirects the user back to the frontend with the authorization code. The frontend captures this code and sends it to the backend via an API to exchange it for access and refresh tokens. The tokens are then returned to the frontend for secure storage and API requests.
 
 **1. Install Keycloak Dependencies**
-- You will need `django-keycloak` and `requests` to interact with Keycloak APIs.
+- You will need `python-keycloak` to interact with Keycloak APIs.
 
   ```python
-  pip install django-keycloak requests
+  pip install python-keycloak==4.7.3
   ```
 
 **2. Configure Django Settings**
 - Update your `settings.py` file to include the necessary Keycloak configurations.
   
   ```python
-  INSTALLED_APPS = [
-      # your other apps
-      'django_keycloak',
-  ]
+  REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+      'app_name.authentication.KeycloakAuthentication', # Custom keycloak auth class for DRF
+    ),
+  }
 
-  # Keycloak Configuration
-  KEYCLOAK_SERVER_URL = "http://localhost:8080"  # Your Keycloak server URL
-  KEYCLOAK_REALM = "MyRealm"  # Your Keycloak realm
-  KEYCLOAK_CLIENT_ID = "APP1"  # Client ID for your app
-  KEYCLOAK_CLIENT_SECRET = "your-client-secret"  # Client secret generated in Keycloak
-  KEYCLOAK_CALLBACK_URL = "http://localhost:8000/sso/auth/callback/"  # Callback URL for exchanging the code
+  # Keycloak SSO Configuration
+  KEYCLOAK_CONFIG = {
+    "SERVER_URL": "http://localhost:8080",  # Keycloak server URL
+    "REALM_NAME": "realm-name",  # Keycloak realm
+    "CLIENT_ID": "client-ID",  # Client ID for your app
+    "CLIENT_SECRET": "client-secret",  # Client secret generated in Keycloak
+    "REDIRECT_URI": "http://localhost:8000/api/auth/callback/"  # Callback URL after login
+  }
   ```
 
 **3. Create the Backend Views**
