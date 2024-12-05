@@ -45,18 +45,18 @@ The Django backend will redirect the user to Keycloak for authentication. After 
   
   ```python
   REST_FRAMEWORK = {
-    'DEFAULT_AUTHENTICATION_CLASSES': (
-      'app_name.authentication.KeycloakAuthentication', # Custom keycloak auth class for DRF
-    ),
+      'DEFAULT_AUTHENTICATION_CLASSES': (
+        'app_name.authentication.KeycloakAuthentication', # Custom keycloak auth class for DRF
+      ),
   }
 
   # Keycloak SSO Configuration
   KEYCLOAK_CONFIG = {
-    "SERVER_URL": "http://localhost:8080",  # Keycloak server URL
-    "REALM_NAME": "realm-name",  # Keycloak realm
-    "CLIENT_ID": "client-ID",  # Client ID for your app
-    "CLIENT_SECRET": "client-secret",  # Client secret generated in Keycloak
-    "REDIRECT_URI": "http://localhost:8000/api/auth/callback/"  # Callback URL after login
+      "SERVER_URL": "http://localhost:8080",  # Keycloak server URL
+      "REALM_NAME": "realm-name",  # Keycloak realm
+      "CLIENT_ID": "client-ID",  # Client ID for your app
+      "CLIENT_SECRET": "client-secret",  # Client secret generated in Keycloak
+      "REDIRECT_URI": "http://localhost:8000/api/auth/callback/"  # Callback URL after login
   }
   ```
 
@@ -431,12 +431,12 @@ class SSOLogoutApiView(APIView):
 - After receiving the `code`, the frontend sends a request to `/auth/callback/` to exchange the code for tokens.
   
   ```javascript
-	const exchangeCodeForToken = async (authCode) => {
-			const response = await fetch(`<Backend-URL>/api/sso/auth/callback/?code=${authCode}`);
-			const tokens = await response.json();
-			console.log(tokens);
-			// Store tokens securely, e.g., HttpOnly cookies, localStorage, etc.
-	};
+  const exchangeCodeForToken = async (authCode) => {
+      const response = await fetch(`<Backend-URL>/api/sso/auth/callback/?code=${authCode}`);
+      const tokens = await response.json();
+      console.log(tokens);
+      // Store tokens securely, e.g., HttpOnly cookies, localStorage, etc.
+  };
   ```
 
 **4. Store the Token in Frontend**
