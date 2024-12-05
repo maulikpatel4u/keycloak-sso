@@ -432,10 +432,10 @@ class SSOLogoutApiView(APIView):
   
   ```javascript
 	const exchangeCodeForToken = async (authCode) => {
-	    const response = await fetch(`<Backend-URL>/api/sso/auth/callback/?code=${authCode}`);
-	    const tokens = await response.json();
-	    console.log(tokens);
-	    // Store tokens securely, e.g., HttpOnly cookies, localStorage, etc.
+			const response = await fetch(`<Backend-URL>/api/sso/auth/callback/?code=${authCode}`);
+			const tokens = await response.json();
+			console.log(tokens);
+			// Store tokens securely, e.g., HttpOnly cookies, localStorage, etc.
 	};
   ```
 
