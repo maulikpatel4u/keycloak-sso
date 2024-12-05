@@ -430,7 +430,7 @@ class SSOLogoutApiView(APIView):
 **3. Frontend Sends Code to Backend**
 - After receiving the `code`, the frontend sends a request to `/auth/callback/` to exchange the code for tokens.
   
-  ```python
+  ```javascript
 	const exchangeCodeForToken = async (authCode) => {
 	    const response = await fetch(`<Backend-URL>/api/sso/auth/callback/?code=${authCode}`);
 	    const tokens = await response.json();
