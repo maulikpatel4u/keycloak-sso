@@ -362,7 +362,7 @@ class AuthCallbackApiView(APIView):
                     },
                 )
             except Exception as e:
-                logger.error(f"Error in get_or_create user: {str(e)}")
+                logger.error(f"AuthCallbackApiView | GET Method - Error in get_or_create user: {str(e)}")
                 response = ApiResponse.error(message='An error occurred. Please try again later.')
                 return Response(response, status=HTTP_400_BAD_REQUEST)
             
