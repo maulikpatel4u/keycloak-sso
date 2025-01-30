@@ -53,10 +53,10 @@ The Django backend will redirect the user to Keycloak for authentication. After 
   # Keycloak SSO Configuration
   KEYCLOAK_CONFIG = {
       "SERVER_URL": "http://localhost:8080",  # Keycloak server URL
-      "REALM_NAME": "realm-name",  # Keycloak realm
+      "REALM_NAME": "realm-name",  # Keycloak realm name
       "CLIENT_ID": "client-ID",  # Client ID for your app
       "CLIENT_SECRET": "client-secret",  # Client secret generated in Keycloak
-      "REDIRECT_URI": "http://localhost:8000/api/auth/callback/"  # Callback URL after login
+      "REDIRECT_URI": "<Frontend-host>/sso/callback/"  # Frontend callback URL after Keycloak login
   }
   ```
 
