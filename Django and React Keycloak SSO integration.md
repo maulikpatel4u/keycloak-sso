@@ -1,4 +1,4 @@
-### **Django and React Keycloak Single Sign-On (SSO) integration**
+### **Django Keycloak Single Sign-On (SSO) integration**
 ---
 
 ### **Workflow**
